@@ -1,0 +1,148 @@
+diff --git a/pgtk/src/lisp.h b/pgtk/src/lisp.h
+index 3cb4361..9a9ff1c 100644
+--- a/pgtk/src/lisp.h
++++ b/pgtk/src/lisp.h
+@@ -3246,9 +3246,10 @@ #define IEEE_FLOATING_POINT (FLT_RADIX == 2 && FLT_MANT_DIG == 24 \
+     CHAR_SHIFT = 0x2000000,
+     CHAR_CTL = 0x4000000,
+     CHAR_META = 0x8000000,
++    CHAR_MOD3 = 0x10000000,
+ 
+     CHAR_MODIFIER_MASK =
+-      CHAR_ALT | CHAR_SUPER | CHAR_HYPER | CHAR_SHIFT | CHAR_CTL | CHAR_META,
++      CHAR_ALT | CHAR_SUPER | CHAR_HYPER | CHAR_SHIFT | CHAR_CTL | CHAR_META | CHAR_MOD3,
+ 
+     /* Actually, the current Emacs uses 22 bits for the character value
+        itself.  */
+diff --git a/pgtk/src/pgtkterm.c b/pgtk/src/pgtkterm.c
+index 1ec6bfc..bcac1fc 100644
+--- a/pgtk/src/pgtkterm.c
++++ b/pgtk/src/pgtkterm.c
+@@ -5031,7 +5031,7 @@ size_allocate (GtkWidget *widget, GtkAllocation *alloc,
+ 
+ static void
+ get_modifier_values (int *mod_ctrl, int *mod_meta, int *mod_alt,
+-		     int *mod_hyper, int *mod_super)
++		     int *mod_hyper, int *mod_super, int *mod_mod3)
+ {
+   Lisp_Object tem;
+ 
+@@ -5040,6 +5040,7 @@ get_modifier_values (int *mod_ctrl, int *mod_meta, int *mod_alt,
+   *mod_alt = alt_modifier;
+   *mod_hyper = hyper_modifier;
+   *mod_super = super_modifier;
++  *mod_mod3 = mod3_modifier;
+ 
+   tem = Fget (Vx_ctrl_keysym, Qmodifier_value);
+   if (INTEGERP (tem))
+@@ -5053,6 +5054,9 @@ get_modifier_values (int *mod_ctrl, int *mod_meta, int *mod_alt,
+   tem = Fget (Vx_hyper_keysym, Qmodifier_value);
+   if (INTEGERP (tem))
+     *mod_hyper = XFIXNUM (tem) & INT_MAX;
++  tem = Fget (Vx_mod3_keysym, Qmodifier_value);
++  if (INTEGERP (tem))
++    *mod_mod3 = XFIXNUM (tem) & INT_MAX;
+   tem = Fget (Vx_super_keysym, Qmodifier_value);
+   if (INTEGERP (tem))
+     *mod_super = XFIXNUM (tem) & INT_MAX;
+@@ -5065,11 +5069,12 @@ pgtk_gtk_to_emacs_modifiers (struct pgtk_display_info *dpyinfo, int state)
+   int mod_meta;
+   int mod_alt;
+   int mod_hyper;
++  int mod_mod3;
+   int mod_super;
+   int mod;
+ 
+   get_modifier_values (&mod_ctrl, &mod_meta, &mod_alt, &mod_hyper,
+-		       &mod_super);
++		       &mod_super, &mod_mod3);
+ 
+   mod = 0;
+   if (state & GDK_SHIFT_MASK)
+@@ -5082,6 +5087,8 @@ pgtk_gtk_to_emacs_modifiers (struct pgtk_display_info *dpyinfo, int state)
+     mod |= mod_super;
+   if (state & GDK_HYPER_MASK)
+     mod |= mod_hyper;
++  if (state & GDK_MOD3_MASK)
++    mod |= mod_mod3;
+ 
+   return mod;
+ }
+@@ -5094,16 +5101,19 @@ pgtk_emacs_to_gtk_modifiers (struct pgtk_display_info *dpyinfo, int state)
+   int mod_alt;
+   int mod_hyper;
+   int mod_super;
++  int mod_mod3;
+   int mask;
+ 
+   get_modifier_values (&mod_ctrl, &mod_meta, &mod_alt, &mod_hyper,
+-		       &mod_super);
++		       &mod_super, &mod_mod3);
+ 
+   mask = 0;
+   if (state & mod_super)
+     mask |= GDK_SUPER_MASK;
+   if (state & mod_hyper)
+     mask |= GDK_HYPER_MASK;
++  if (state & mod_mod3)
++    mask |= GDK_MOD3_MASK;
+   if (state & shift_modifier)
+     mask |= GDK_SHIFT_MASK;
+   if (state & mod_ctrl)
+@@ -5219,7 +5229,7 @@ key_press_event (GtkWidget *widget, GdkEvent *event, gpointer *user_data)
+       /* While super is pressed, the input method will always always
+ 	 resend the key events ignoring super.  As a workaround, don't
+ 	 filter key events with super or hyper pressed.  */
+-      if (!(event->key.state & (GDK_SUPER_MASK | GDK_HYPER_MASK)))
++      if (!(event->key.state & (GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_MOD3_MASK)))
+ 	{
+ 	  if (pgtk_im_filter_keypress (f, &event->key))
+ 	    return TRUE;
+@@ -5235,7 +5245,7 @@ key_press_event (GtkWidget *widget, GdkEvent *event, gpointer *user_data)
+          Don't do it here because XLookupString is too eager.  */
+       state &= ~GDK_CONTROL_MASK;
+       state &= ~(GDK_META_MASK
+-		 | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_MOD1_MASK);
++		 | GDK_SUPER_MASK | GDK_HYPER_MASK | GDK_MOD3_MASK | GDK_MOD1_MASK);
+ 
+       nbytes = event->key.length;
+       if (nbytes > copy_bufsiz)
+@@ -7106,6 +7116,7 @@ syms_of_pgtkterm (void)
+   DEFSYM (Qmeta, "meta");
+   DEFSYM (Qsuper, "super");
+   DEFSYM (Qcontrol, "control");
++  DEFSYM (Qmod3, "mod3");
+   DEFSYM (QUTF8_STRING, "UTF8_STRING");
+ 
+   DEFSYM (Qfile, "file");
+@@ -7130,6 +7141,7 @@ syms_of_pgtkterm (void)
+   Fput (Qmeta, Qmodifier_value, make_fixnum (meta_modifier));
+   Fput (Qsuper, Qmodifier_value, make_fixnum (super_modifier));
+   Fput (Qcontrol, Qmodifier_value, make_fixnum (ctrl_modifier));
++  Fput (Qmod3, Qmodifier_value, make_fixnum (mod3_modifier));
+ 
+   DEFVAR_LISP ("x-ctrl-keysym", Vx_ctrl_keysym,
+ 	       doc: /* SKIP: real doc in xterm.c.  */);
+@@ -7151,6 +7163,10 @@ syms_of_pgtkterm (void)
+ 	       doc: /* SKIP: real doc in xterm.c.  */);
+   Vx_super_keysym = Qnil;
+ 
++  DEFVAR_LISP ("x-mod3-keysym", Vx_mod3_keysym,
++	       doc: /* SKIP: real doc in xterm.c.  */);
++  Vx_mod3_keysym = Qnil;
++
+   DEFVAR_BOOL ("x-use-underline-position-properties",
+ 	       x_use_underline_position_properties,
+      doc: /* SKIP: real doc in xterm.c.  */);
+diff --git a/pgtk/src/termhooks.h b/pgtk/src/termhooks.h
+index d828c62..c5c2a46 100644
+--- a/pgtk/src/termhooks.h
++++ b/pgtk/src/termhooks.h
+@@ -453,6 +453,7 @@ #define EVENT_INIT(event) (memset (&(event), 0, sizeof (struct input_event)), \
+   hyper_modifier=  CHAR_HYPER,	/* Under X, the XK_Hyper_[LR] keysyms.  */
+   shift_modifier=  CHAR_SHIFT,
+   ctrl_modifier	=  CHAR_CTL,
++  mod3_modifier	=  CHAR_MOD3,
+   meta_modifier	=  CHAR_META	/* Under X, the XK_Meta_[LR] keysyms.  */
+ };
+ 
